@@ -1,4 +1,9 @@
-import { randomBytes, scryptSync, createCipheriv } from "crypto";
+import {
+  randomBytes,
+  scryptSync,
+  createCipheriv,
+  createDecipheriv,
+} from "crypto";
 import fs from "fs";
 import { stdout, stdin } from "process";
 import readline from "readline";
@@ -67,6 +72,35 @@ function encrypt(filePath, algo) {
 
 function decrypt(filePath) {
   console.log(`Decrypting ${filePath}`);
+  const fileContent = fs.readFileSync(filePath);
+  const salt = fileContent.subarray(0, 16);
+  const iv = fileContent.subarray(16, 32);
+  const data = fileContent.subarray(32);
+  console.log("salt length:", salt.length);
+  console.log("iv length:", iv.length);
+  console.log("data length:", data.length);
+  console.log("file total:", fileContent.length);
+
+  rl.question("Enter the password: \n", (password) => {
+    const key = scryptSync(password, salt, 32);
+
+    const cipher = createDecipheriv("aes-256-cbc", key, iv);
+
+    const decrypted = Buffer.concat([cipher.update(data), cipher.final()]);
+
+    const outPath = filePath.replace(".enc", "");
+
+    fs.writeFileSync(outPath, decrypted);
+
+    console.log(`Decrypted: ${outPath}`);
+    rl.close();
+  });
+
+  rl.stdoutMuted = true;
+  rl._writeToOutput = (char) => {
+    if (rl.stdoutMuted) process.stdout.write("*");
+    else process.stdout.write(char);
+  };
 }
 
 if (command === "encrypt") {
