@@ -13,6 +13,14 @@ const rl = readline.createInterface({
   output: stdout,
 });
 
+function checkIsFileExist(filePath) {
+  if (!fs.existsSync(filePath)) {
+    console.log(`Error: file not found: ${filePath}`);
+
+    process.exit(1);
+  }
+}
+
 const params = process.argv.slice(2);
 const command = params[0];
 const filePath = params[1];
@@ -20,6 +28,8 @@ let algo = null;
 const algmMethodIndex = params.findIndex((p) => p === "--algo");
 if (algmMethodIndex !== -1) {
   algo = params[algmMethodIndex + 1];
+} else {
+  algo = "aes-256-cbc";
 }
 
 if (!command || !filePath) {
@@ -40,9 +50,13 @@ function encrypt(filePath, algo) {
   const salt = randomBytes(16);
   const iv = randomBytes(16);
 
+  checkIsFileExist(filePath);
+
   const fileContent = fs.readFileSync(filePath);
 
   rl.question("Enter password: \n", (password) => {
+    process.stdout.write("\n");
+
     const key = scryptSync(password, salt, 32);
 
     const cipher = createCipheriv("aes-256-cbc", key, iv);
@@ -52,11 +66,11 @@ function encrypt(filePath, algo) {
       cipher.final(),
     ]);
 
-    const result = Buffer.concat([salt, iv, encrypted]);
+    const encryptedData = Buffer.concat([salt, iv, encrypted]);
 
     const outPath = filePath + ".enc";
 
-    fs.writeFileSync(outPath, result);
+    fs.writeFileSync(outPath, encryptedData);
 
     console.log(`Created: ${outPath}`);
 
@@ -71,29 +85,38 @@ function encrypt(filePath, algo) {
 }
 
 function decrypt(filePath) {
-  console.log(`Decrypting ${filePath}`);
+  checkIsFileExist(filePath);
+
+  console.log(`Decrypting ${filePath}...`);
+
   const fileContent = fs.readFileSync(filePath);
   const salt = fileContent.subarray(0, 16);
   const iv = fileContent.subarray(16, 32);
   const data = fileContent.subarray(32);
-  console.log("salt length:", salt.length);
-  console.log("iv length:", iv.length);
-  console.log("data length:", data.length);
-  console.log("file total:", fileContent.length);
 
   rl.question("Enter the password: \n", (password) => {
+    process.stdout.write("\n");
+
     const key = scryptSync(password, salt, 32);
 
     const cipher = createDecipheriv("aes-256-cbc", key, iv);
 
-    const decrypted = Buffer.concat([cipher.update(data), cipher.final()]);
+    try {
+      const decryptedData = Buffer.concat([
+        cipher.update(data),
+        cipher.final(),
+      ]);
+      const outPath = filePath.replace(".enc", "");
 
-    const outPath = filePath.replace(".enc", "");
+      fs.writeFileSync(outPath, decryptedData);
 
-    fs.writeFileSync(outPath, decrypted);
+      console.log(`Decrypted: ${outPath}`);
+      rl.close();
+    } catch (error) {
+      console.log("Error: wrong password or corrupted file.");
 
-    console.log(`Decrypted: ${outPath}`);
-    rl.close();
+      process.exit(1);
+    }
   });
 
   rl.stdoutMuted = true;
