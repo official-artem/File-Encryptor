@@ -13,12 +13,26 @@ const rl = readline.createInterface({
   output: stdout,
 });
 
+const supportedAlgorithms = ["aes-256-cbc", "aes-128-cbc"];
+
 function checkIsFileExist(filePath) {
   if (!fs.existsSync(filePath)) {
     console.log(`Error: file not found: ${filePath}`);
 
     process.exit(1);
   }
+}
+
+function checkIsSupportedAlgorithm(algorithm) {
+  if (!supportedAlgorithms.includes(algorithm)) {
+    console.log("Error: algorithm not supported");
+
+    process.exit(1);
+  }
+}
+
+function getKeyLengthByAlgorithm(algorithm) {
+  return algorithm === "aes-256-cbc" ? 32 : 16;
 }
 
 const params = process.argv.slice(2);
@@ -46,35 +60,41 @@ if (command !== "encrypt" && command !== "decrypt") {
   process.exit(1);
 }
 
-function encrypt(filePath, algo) {
+function encrypt(filePath, algorithm) {
+  checkIsSupportedAlgorithm(algorithm);
+  checkIsFileExist(filePath);
+
   const salt = randomBytes(16);
   const iv = randomBytes(16);
-
-  checkIsFileExist(filePath);
 
   const fileContent = fs.readFileSync(filePath);
 
   rl.question("Enter password: \n", (password) => {
     process.stdout.write("\n");
 
-    const key = scryptSync(password, salt, 32);
+    const key = scryptSync(password, salt, getKeyLengthByAlgorithm(algorithm));
 
-    const cipher = createCipheriv("aes-256-cbc", key, iv);
+    try {
+      const cipher = createCipheriv(algorithm, key, iv);
+      const encrypted = Buffer.concat([
+        cipher.update(fileContent),
+        cipher.final(),
+      ]);
 
-    const encrypted = Buffer.concat([
-      cipher.update(fileContent),
-      cipher.final(),
-    ]);
+      const encryptedData = Buffer.concat([salt, iv, encrypted]);
 
-    const encryptedData = Buffer.concat([salt, iv, encrypted]);
+      const outPath = filePath + `.${algorithm}.enc`;
 
-    const outPath = filePath + ".enc";
+      fs.writeFileSync(outPath, encryptedData);
 
-    fs.writeFileSync(outPath, encryptedData);
+      console.log(`Created: ${outPath}`);
 
-    console.log(`Created: ${outPath}`);
+      rl.close();
+    } catch (e) {
+      console.log("Smt went wrong");
 
-    rl.close();
+      process.exit(1);
+    }
   });
 
   rl.stdoutMuted = true;
@@ -97,16 +117,21 @@ function decrypt(filePath) {
   rl.question("Enter the password: \n", (password) => {
     process.stdout.write("\n");
 
-    const key = scryptSync(password, salt, 32);
+    const fileParts = filePath.split(".");
 
-    const cipher = createDecipheriv("aes-256-cbc", key, iv);
+    const algorithm = fileParts[fileParts.length - 2];
+    checkIsSupportedAlgorithm(algorithm);
+
+    const key = scryptSync(password, salt, getKeyLengthByAlgorithm(algorithm));
+
+    const cipher = createDecipheriv(algorithm, key, iv);
 
     try {
       const decryptedData = Buffer.concat([
         cipher.update(data),
         cipher.final(),
       ]);
-      const outPath = filePath.replace(".enc", "");
+      const outPath = filePath.replace(`.${algorithm}.enc`, "");
 
       fs.writeFileSync(outPath, decryptedData);
 
